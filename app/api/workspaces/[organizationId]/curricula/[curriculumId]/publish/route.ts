@@ -12,12 +12,14 @@ export async function POST(_request: Request, context: RouteContext) {
 
     const membership = await prisma.membership.findFirst({
       where: { userId: user.id, organizationId, status: "ACTIVE" },
-      include: { organization: { select: { type: true } } },
+      select: { role: true },
     });
-    const canPublish = user.platformRole === "PLATFORM_ADMIN" ||
-      membership?.role === "SCHOOL_ADMIN" ||
-      (membership?.role === "TEACHER" && membership.organization.type === "EDUCATION_ORGANIZATION");
-    if (!canPublish) return NextResponse.json({ error: "Only a school administrator can publish school curriculum" }, { status: 403 });
+    const canPublish = user.platformRole === "PLATFORM_ADMIN" || membership?.role === "SCHOOL_ADMIN";
+    if (!canPublish) {
+      return NextResponse.json({
+        error: "Only a School Admin or Platform Admin can approve and publish curriculum. Teachers can submit topics for review.",
+      }, { status: 403 });
+    }
 
     const curriculum = await prisma.curriculumDocument.findFirst({
       where: { id: curriculumId, organizationId },
