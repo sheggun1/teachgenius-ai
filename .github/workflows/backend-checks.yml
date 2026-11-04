@@ -24,6 +24,8 @@ jobs:
         run: yarn install --non-interactive
       - name: Generate Prisma client
         run: npx prisma generate
+      - name: Generate initial database SQL preview
+        run: npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script
       - name: Type-check
         run: yarn typecheck
       - name: Build
