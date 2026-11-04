@@ -27,7 +27,7 @@ async function getMembership(userId: string, organizationId: string) {
   });
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
@@ -37,12 +37,37 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Workspace access denied" }, { status: 403 });
     }
 
+    const search = request.nextUrl.searchParams.get("q")?.trim().slice(0, 120);
+    const canReviewAll = user.platformRole === "PLATFORM_ADMIN" || membership?.role === "SCHOOL_ADMIN";
+    const conditions: object[] = [];
+    if (!canReviewAll) {
+      // Teachers and students see approved curriculum plus their own submissions only.
+      conditions.push({ OR: [{ status: "PUBLISHED" }, { createdBy: user.id }] });
+    }
+    if (search) {
+      conditions.push({
+        OR: [
+          { title: { contains: search, mode: "insensitive" } },
+          { subjectName: { contains: search, mode: "insensitive" } },
+          { className: { contains: search, mode: "insensitive" } },
+          { versions: { some: { topics: { some: { OR: [
+            { topic: { contains: search, mode: "insensitive" } },
+            { subtopic: { contains: search, mode: "insensitive" } },
+          ] } } } } },
+        ],
+      });
+    }
+
     const curricula = await prisma.curriculumDocument.findMany({
-      where: { organizationId },
+      where: { organizationId, AND: conditions },
       include: { versions: { orderBy: { versionNumber: "desc" }, include: { topics: { orderBy: { sortOrder: "asc" } } } } },
       orderBy: { updatedAt: "desc" },
     });
-    return NextResponse.json({ curricula });
+    return NextResponse.json({
+      curricula,
+      search: search || null,
+      visibility: canReviewAll ? "ALL_WORKSPACE_CURRICULUM" : "PUBLISHED_AND_MY_SUBMISSIONS",
+    });
   } catch (error) {
     console.error("Curriculum listing failed:", error);
     return NextResponse.json({ error: "Unable to load curriculum" }, { status: 500 });
@@ -63,6 +88,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid curriculum data", details: parsed.error.flatten() }, { status: 400 });
     const input = parsed.data;
 
+    // Teacher submissions are always drafts and remain private to that teacher until an admin publishes them.
     const curriculum = await prisma.curriculumDocument.create({
       data: {
         organizationId,
@@ -90,7 +116,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       },
       include: { versions: { include: { topics: { orderBy: { sortOrder: "asc" } } } } },
     });
-    return NextResponse.json({ success: true, curriculum }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      curriculum,
+      status: "DRAFT",
+      message: "Your topics have been saved for your own reference and are awaiting administrator approval.",
+    }, { status: 201 });
   } catch (error) {
     console.error("Curriculum creation failed:", error);
     return NextResponse.json({ error: "Unable to save curriculum" }, { status: 500 });
