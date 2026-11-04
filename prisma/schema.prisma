@@ -7,6 +7,11 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
+enum PlatformRole {
+  USER
+  PLATFORM_ADMIN
+}
+
 enum OrganizationType {
   SCHOOL
   EDUCATION_ORGANIZATION
@@ -49,13 +54,29 @@ enum DocumentStatus {
 
 model UserProfile {
   id             String       @id @default(uuid()) @db.Uuid
-  authUserId     String       @unique @db.Uuid
+  authUserId     String?      @unique @db.Uuid
   displayName    String?
-  email          String?
+  email          String?      @unique
+  passwordHash   String?
+  platformRole   PlatformRole @default(USER)
+  emailVerifiedAt DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   memberships   Membership[]
+  authSessions  AuthSession[]
   ownedDocuments GeneratedDocument[] @relation("PersonalDocuments")
+}
+
+model AuthSession {
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String      @db.Uuid
+  tokenHash String      @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime    @default(now())
+  user      UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
 }
 
 model Organization {
