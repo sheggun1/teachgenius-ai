@@ -25,7 +25,7 @@
     "@types/react": "19.1.16",
     "@types/react-dom": "19.1.9",
     "eslint": "9.36.0",
-    "eslint-config-next": "15.5.6",
+    "eslint-config-next": "15.5.10",
     "prisma": "6.19.0",
     "typescript": "5.9.3"
   }
