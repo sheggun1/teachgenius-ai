@@ -9,6 +9,9 @@ ALTER TABLE "UserProfile"
   ADD COLUMN "platformRole" "PlatformRole" NOT NULL DEFAULT 'USER',
   ADD COLUMN "emailVerifiedAt" TIMESTAMP(3);
 
+-- Normalize existing addresses because registration stores lowercase emails.
+UPDATE "UserProfile" SET "email" = lower("email") WHERE "email" IS NOT NULL;
+
 CREATE UNIQUE INDEX "UserProfile_email_key" ON "UserProfile"("email");
 
 CREATE TABLE "AuthSession" (
