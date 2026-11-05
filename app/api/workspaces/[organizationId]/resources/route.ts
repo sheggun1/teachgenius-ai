@@ -42,7 +42,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ org
     const admin = platformAdmin || membership?.role === "SCHOOL_ADMIN";
     const resources = await prisma.resourceAsset.findMany({
       where: { organizationId, ...(admin ? {} : { OR: [{ uploadedBy: user.id }, { visibility: "WORKSPACE", reviewStatus: "APPROVED" }] }) },
-      select: { id: true, title: true, originalName: true, mimeType: true, fileSize: true, category: true, visibility: true, reviewStatus: true, reviewNote: true, createdAt: true, uploadedBy: true, uploader: { select: { displayName: true, email: true } } },
+      select: { id: true, title: true, originalName: true, mimeType: true, fileSize: true, category: true, visibility: true, reviewStatus: true, reviewNote: true, extractedText: true, createdAt: true, uploadedBy: true, uploader: { select: { displayName: true, email: true } } },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ resources: resources.map(({ extractedText, ...resource }) => ({ ...resource, extractedTextAvailable: Boolean(extractedText) })), canReview: admin });
