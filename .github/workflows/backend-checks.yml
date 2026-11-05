@@ -9,10 +9,25 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: teachgenius_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d teachgenius_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/teachgenius_ci
       DIRECT_URL: postgresql://ci:ci@localhost:5432/teachgenius_ci
       NEXT_TELEMETRY_DISABLED: "1"
+      NODE_ENV: test
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -20,11 +35,32 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: yarn
       - name: Install dependencies
         run: yarn install --non-interactive
       - name: Generate Prisma client
         run: npx prisma generate
+      - name: Apply all migrations to a clean PostgreSQL database
+        run: npx prisma migrate deploy
       - name: Type-check
         run: yarn typecheck
       - name: Build
         run: yarn build
+      - name: Start production server and run end-to-end API smoke tests
+        shell: bash
+        run: |
+          yarn start > /tmp/teachgenius-next.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://localhost:3000/api/health >/dev/null; then
+              break
+            fi
+            if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+              cat /tmp/teachgenius-next.log
+              exit 1
+            fi
+            sleep 2
+          done
+          curl --silent --fail http://localhost:3000/api/health >/dev/null || { cat /tmp/teachgenius-next.log; exit 1; }
+          node scripts/smoke-test.mjs
