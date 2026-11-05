@@ -110,11 +110,11 @@ export default async function PlatformAdminPage() {
 
         <section style={{ ...panel, marginBottom: 22 }}>
           <div style={{ fontSize: 17, fontWeight: 750 }}>Administration modules</div>
-          <p style={{ color: "#64748b", fontSize: 13, margin: "6px 0 15px", lineHeight: 1.6 }}>This first release is a read-only overview. Account changes, school management and billing controls will be added as separately secured features.</p>
+          <p style={{ color: "#64748b", fontSize: 13, margin: "6px 0 15px", lineHeight: 1.6 }}>Use the management tools above to control platform accounts and workspace memberships. The overview below provides a read-only snapshot of platform activity.</p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
             {[
-              ["User management", "Review registered accounts and platform roles", "Available"],
-              ["School workspaces", "Review schools and membership totals", "Available"],
+              ["User management", "Search accounts and suspend or reactivate access", "Available"],
+              ["Workspace management", "Create workspaces and manage memberships", "Available"],
               ["Curriculum oversight", "Monitor curriculum documents across schools", "Overview only"],
               ["Billing and usage", "Credits, subscriptions and payment records", "Coming next"],
             ].map(([title, description, status]) => (
