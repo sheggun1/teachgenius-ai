@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
       await tx.aiCreditAccount.create({
         data: { organizationId: organization.id, balance: 100 },
       });
+      await tx.aiUsageLedger.create({
+        data: { organizationId: organization.id, ownerUserId: createdUser.id, operation: "STARTER_GRANT", creditsDelta: 100, status: "COMPLETED", idempotencyKey: `starter-${organization.id}`, metadata: { reason: "Initial workspace allowance" } },
+      });
       return createdUser;
     });
 
