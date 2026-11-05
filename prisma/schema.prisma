@@ -240,3 +240,18 @@ model AiUsageLedger {
   @@index([ownerUserId, createdAt])
   @@index([organizationId, createdAt])
 }
+
+
+model PlatformAdminAuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorUserId    String   @db.Uuid
+  targetUserId   String?  @db.Uuid
+  organizationId String?  @db.Uuid
+  action         String
+  details        Json?
+  createdAt      DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([organizationId, createdAt])
+}
