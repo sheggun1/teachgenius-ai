@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 type Workspace = { id:string; name:string; type:string; role:string };
 type Topic = { id:string; topic:string; subtopic?:string|null; term?:string|null; week?:string|null; curriculumTitle:string; subjectName?:string|null; className?:string|null };
 type Curriculum = { id:string; title:string; subjectName?:string|null; className?:string|null; status:string; versions:Array<{topics:Array<{id:string;topic:string;subtopic?:string|null;term?:string|null;week?:string|null}>}> };
+type Resource = { id:string; title:string; category:string; reviewStatus:string; visibility:string; extractedTextAvailable:boolean };
 const types=[["LESSON_NOTE","Lesson note"],["LESSON_PLAN","Lesson plan"],["QUIZ","Quiz"],["ASSIGNMENT","Assignment"],["EXAMINATION","Examination"],["REVISION_NOTE","Revision note"]];
 
 export default function StudioClient({displayName}:{displayName:string}) {
@@ -14,6 +15,8 @@ export default function StudioClient({displayName}:{displayName:string}) {
   const [workspaceId,setWorkspaceId]=useState("");
   const [topics,setTopics]=useState<Topic[]>([]);
   const [topicId,setTopicId]=useState("");
+  const [resources,setResources]=useState<Resource[]>([]);
+  const [resourceIds,setResourceIds]=useState<string[]>([]);
   const [type,setType]=useState("LESSON_NOTE");
   const [title,setTitle]=useState("");
   const [instructions,setInstructions]=useState("");
@@ -33,6 +36,12 @@ export default function StudioClient({displayName}:{displayName:string}) {
     }).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setLoadingTopics(false);});
     return()=>{active=false;};
   },[workspaceId]);
+  useEffect(()=>{
+    if(!workspaceId){setResources([]);setResourceIds([]);return;}
+    let active=true;
+    fetch("/api/workspaces/"+workspaceId+"/resources").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to load resources");if(active)setResources((d.resources||[]).map((x:Resource)=>({...x,extractedTextAvailable:!!x.extractedTextAvailable})));}).catch(()=>{if(active)setResources([]);});
+    return()=>{active=false;};
+  },[workspaceId]);
   const selectedTopic=useMemo(()=>topics.find(t=>t.id===topicId),[topics,topicId]);
 
   async function generate(event:React.FormEvent<HTMLFormElement>){
@@ -40,7 +49,7 @@ export default function StudioClient({displayName}:{displayName:string}) {
     if(!workspaceId||!topicId){setError("Choose a workspace and an approved curriculum topic.");return;}
     setLoading(true);
     try{
-      const response=await fetch("/api/ai/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({organizationId:workspaceId,curriculumTopicId:topicId,type,title:title.trim()||undefined,additionalInstructions:instructions.trim()||undefined})});
+      const response=await fetch("/api/ai/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({organizationId:workspaceId,curriculumTopicId:topicId,type,title:title.trim()||undefined,additionalInstructions:instructions.trim()||undefined,resourceIds})});
       const data=await response.json();if(!response.ok)throw new Error(data.error||"Document generation failed");
       router.push("/documents/"+data.document.id);router.refresh();
     }catch(e){setError(e instanceof Error?e.message:"Unable to generate document");}
@@ -58,6 +67,7 @@ export default function StudioClient({displayName}:{displayName:string}) {
           <div className="tg-field"><label className="tg-label" htmlFor="workspace">Workspace</label><select className="tg-select" id="workspace" value={workspaceId} onChange={e=>setWorkspaceId(e.target.value)} required><option value="">Select workspace</option>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name} · {w.role.replaceAll("_"," ")}</option>)}</select></div>
           <div className="tg-field"><label className="tg-label" htmlFor="doctype">Document type</label><select className="tg-select" id="doctype" value={type} onChange={e=>setType(e.target.value)}>{types.map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></div>
           <div className="tg-field"><label className="tg-label" htmlFor="topic">Approved curriculum topic</label><select className="tg-select" id="topic" value={topicId} onChange={e=>setTopicId(e.target.value)} disabled={loadingTopics||!topics.length} required><option value="">{loadingTopics?"Loading curriculum…":topics.length?"Choose a published topic":"No published topics available"}</option>{topics.map(t=><option key={t.id} value={t.id}>{[t.subjectName,t.className,t.topic,t.week?"Week "+t.week:null].filter(Boolean).join(" · ")}</option>)}</select><small style={{color:"#7b8ba1"}}>{topics.length} approved topic(s) available in this workspace.</small></div>
+          <div className="tg-field"><span className="tg-label">Supporting uploaded resources <span style={{fontWeight:400,color:"#8493a7"}}>(optional)</span></span><div style={{border:"1px solid #dce5f0",borderRadius:10,padding:12,display:"grid",gap:9,maxHeight:190,overflowY:"auto"}}>{resources.filter(r=>r.reviewStatus==="APPROVED"||r.visibility==="PRIVATE").map(r=><label key={r.id} style={{display:"flex",gap:9,alignItems:"center",fontSize:12,color:"#334155"}}><input type="checkbox" checked={resourceIds.includes(r.id)} onChange={e=>setResourceIds(current=>e.target.checked?[...current,r.id]:current.filter(id=>id!==r.id))}/><span>{r.title} <small style={{color:"#8493a7"}}>· {r.category.replaceAll("_"," ")}</small></span></label>)}{resources.filter(r=>r.reviewStatus==="APPROVED"||r.visibility==="PRIVATE").length===0&&<small style={{color:"#8493a7"}}>No approved or personal resources. Upload materials in the Resource Library first.</small>}</div><small style={{color:"#7b8ba1"}}>Text extracted from selected PDFs, Word documents, TXT and CSV files can guide Gemini. Images and presentation files remain downloadable references.</small><Link href="/resources" style={{fontSize:12,color:"#155eef"}}>Open Resource Library →</Link></div>
           <div className="tg-field"><label className="tg-label" htmlFor="title">Document title <span style={{fontWeight:400,color:"#8493a7"}}>(optional)</span></label><input className="tg-input" id="title" maxLength={180} value={title} onChange={e=>setTitle(e.target.value)} placeholder="e.g. Introduction to Cell Structure"/></div>
           <div className="tg-field"><label className="tg-label" htmlFor="instructions">Additional teaching instructions <span style={{fontWeight:400,color:"#8493a7"}}>(optional)</span></label><textarea className="tg-textarea" id="instructions" rows={4} maxLength={2000} value={instructions} onChange={e=>setInstructions(e.target.value)} placeholder="Specify teaching approach, learner level, examples or assessment style…"/></div>
           {selectedTopic&&<div className="tg-alert tg-alert-info">Selected curriculum: <strong>{selectedTopic.curriculumTitle}</strong>{selectedTopic.subtopic?" · "+selectedTopic.subtopic:""}</div>}
