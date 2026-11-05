@@ -88,6 +88,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: input.action === "SUSPEND_MEMBERSHIP" ? "Workspace access suspended" : "Workspace access reactivated" });
     }
 
+    if (input.action !== "CREATE_WORKSPACE") {
+      return NextResponse.json({ error: "Unsupported management action" }, { status: 400 });
+    }
+
     const slugBase = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "workspace";
     const slug = slugBase + "-" + randomUUID().slice(0, 8);
     const created = await prisma.$transaction(async tx => {
