@@ -67,7 +67,20 @@ export async function POST(request: NextRequest) {
         }
       }
       await prisma.$transaction(async tx => {
-        await tx.userProfile.update({ where: { id: target.id }, data: { accountStatus: input.action === "SUSPEND_USER" ? "SUSPENDED" : "ACTIVE" } });
+        await tx.userProfile.update({
+          where: { id: target.id },
+          data: input.action === "SUSPEND_USER"
+            ? {
+                accountStatus: "SUSPENDED",
+                suspendedAt: new Date(),
+                suspensionReason: input.reason?.trim() || null,
+              }
+            : {
+                accountStatus: "ACTIVE",
+                suspendedAt: null,
+                suspensionReason: null,
+              },
+        });
         if (input.action === "SUSPEND_USER") await tx.authSession.updateMany({ where: { userId: target.id, revokedAt: null }, data: { revokedAt: new Date() } });
         await tx.platformAdminAuditLog.create({ data: { actorUserId: actorId, targetUserId: target.id, action: input.action, details: { reason: input.reason || null } } });
       });
