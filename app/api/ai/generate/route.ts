@@ -10,6 +10,7 @@ const requestSchema = z.object({
   type: z.enum(["LESSON_NOTE", "LESSON_PLAN", "EXAMINATION", "QUIZ", "ASSIGNMENT", "REVISION_NOTE"]),
   title: z.string().trim().max(180).optional(),
   additionalInstructions: z.string().trim().max(2000).optional(),
+  resourceIds: z.array(z.string().uuid()).max(10).optional(),
 });
 
 const generatedContentSchema = z.object({
@@ -99,6 +100,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "You do not have permission to generate documents in this workspace" }, { status: 403 });
     }
 
+    const selectedResourceIds = input.resourceIds ?? [];
+    const selectedResources = selectedResourceIds.length ? await prisma.resourceAsset.findMany({
+      where: {
+        id: { in: selectedResourceIds },
+        organizationId: input.organizationId,
+        OR: [
+          { uploadedBy: user.id },
+          { visibility: "WORKSPACE", reviewStatus: "APPROVED" },
+        ],
+      },
+      select: { id: true, title: true, originalName: true, extractedText: true },
+    }) : [];
+    if (selectedResources.length !== selectedResourceIds.length) {
+      return NextResponse.json({ error: "One or more selected resources are unavailable or not approved for your account." }, { status: 403 });
+    }
+    const supportingResources = selectedResources
+      .filter((resource) => resource.extractedText?.trim())
+      .map((resource) => ({ title: resource.title, fileName: resource.originalName, text: resource.extractedText!.slice(0, 12000) }))
+      .slice(0, 10);
+
     const topicRecord = await prisma.curriculumTopic.findUnique({
       where: { id: input.curriculumTopicId },
       include: { version: { include: { document: true } } },
@@ -134,7 +155,7 @@ export async function POST(request: NextRequest) {
 
     const systemInstruction = [
       "You are an educational content generator.",
-      "Use only the supplied approved curriculum topic, subtopic, objectives, and source text.",
+      "Keep the supplied approved curriculum topic, subtopic and objectives as the required scope. Supporting uploaded resources may clarify or provide examples but must not broaden the curriculum coverage.",
       "Do not add, invent, broaden, or substitute topics, learning objectives, or curriculum coverage.",
       "If the source does not provide enough information for a requested detail, state that limitation in a section instead of inventing curriculum facts.",
       "Return the exact JSON structure required by the response schema.",
@@ -147,6 +168,7 @@ export async function POST(request: NextRequest) {
       requestedTitle: input.title,
       additionalInstructions: input.additionalInstructions,
       approvedCurriculum: curriculumContext,
+      supportingUploadedResources: supportingResources,
       outputRequirements: "Keep the document faithful to the approved curriculum. Do not introduce unrelated content.",
     });
 
