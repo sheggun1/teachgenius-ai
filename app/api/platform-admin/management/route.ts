@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
     }
 
     const slugBase = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "workspace";
-    const slug = slugBase + "-" + crypto.randomUUID().slice(0, 8);
+    const slug = slugBase + "-" + randomUUID().slice(0, 8);
     const created = await prisma.$transaction(async tx => {
       const organization = await tx.organization.create({ data: { name: input.name, slug, type: input.type } });
       if (input.adminUserId) {
