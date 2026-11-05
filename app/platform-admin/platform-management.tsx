@@ -34,7 +34,7 @@ export default function PlatformManagement() {
   useEffect(() => { load().catch(e => setNotice(e.message)); }, []);
 
   async function act(payload: Record<string, string | number>) {
-    const key = payload.userId || payload.membershipId || payload.action || "workspace";
+    const key = String(payload.userId || payload.membershipId || payload.action || "workspace");
     setBusy(key); setNotice("");
     try {
       const response = await fetch("/api/platform-admin/management", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
