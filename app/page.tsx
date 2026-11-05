@@ -9,7 +9,7 @@ export default async function HomePage(){
  if(user.platformRole==="PLATFORM_ADMIN")redirect("/platform-admin");
  const memberships=await prisma.membership.findMany({where:{userId:user.id,status:"ACTIVE"},include:{organization:true},orderBy:{createdAt:"asc"}});
  const membership=memberships[0]??null;const workspace=membership?.organization??null;
- const documentWhere=workspace?{OR:[{ownerUserId:user.id},{organizationId:workspace.id}]}:{ownerUserId:user.id};
+ const canViewWorkspaceDocuments=membership?.role==="SCHOOL_ADMIN"||membership?.role==="TEACHER";\n const documentWhere=workspace&&canViewWorkspaceDocuments?{OR:[{ownerUserId:user.id},{organizationId:workspace.id}]}:{ownerUserId:user.id};
  const [documentCount,recentDocuments,publishedCurriculumCount]=await Promise.all([
   prisma.generatedDocument.count({where:documentWhere}),
   prisma.generatedDocument.findMany({where:documentWhere,orderBy:{updatedAt:"desc"},take:6,select:{id:true,title:true,type:true,status:true,updatedAt:true,subjectName:true,className:true}}),
