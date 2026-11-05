@@ -16,6 +16,7 @@ export default async function HomePage(){
   prisma.generatedDocument.findMany({where:documentWhere,orderBy:{updatedAt:"desc"},take:6,select:{id:true,title:true,type:true,status:true,updatedAt:true,subjectName:true,className:true}}),
   workspace?prisma.curriculumDocument.count({where:{organizationId:workspace.id,status:"PUBLISHED"}}):Promise.resolve(0)
  ]);
+ const creditAccount=workspace?await prisma.aiCreditAccount.findUnique({where:{organizationId:workspace.id},select:{balance:true}}):null;
  const displayName=user.displayName?.trim()||user.email||"Teacher";
  const roleLabel=membership?.role==="SCHOOL_ADMIN"?"School Admin":membership?.role==="STUDENT"?"Student":"Teacher";
  return <main className="tg-shell">
@@ -27,6 +28,7 @@ export default async function HomePage(){
    </section>
    <section className="tg-grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(205px,1fr))",marginBottom:22}}>
     <article className="tg-card tg-stat"><div className="tg-stat-label">Current workspace</div><div style={{font:"750 19px Manrope,sans-serif",marginTop:10}}>{workspace?.name??"No active workspace"}</div><div className="tg-stat-note">{workspace?.type==="SCHOOL"?"School workspace":"Personal teacher workspace"}</div></article>
+    <article className="tg-card tg-stat"><div className="tg-stat-label">AI credits available</div><div className="tg-stat-value">{creditAccount?.balance??0}</div><div className="tg-stat-note">One credit per successful AI document</div></article>
     <article className="tg-card tg-stat"><div className="tg-stat-label">Teaching documents</div><div className="tg-stat-value">{documentCount}</div><div className="tg-stat-note">Saved in your workspace</div></article>
     <article className="tg-card tg-stat"><div className="tg-stat-label">Approved curriculum items</div><div className="tg-stat-value">{publishedCurriculumCount}</div><div className="tg-stat-note">Available to guide AI generation</div></article>
     <article className="tg-card tg-stat"><div className="tg-stat-label">Account role</div><div className="tg-stat-value" style={{fontSize:23}}>{roleLabel}</div><div className="tg-stat-note">Active workspace membership</div></article>

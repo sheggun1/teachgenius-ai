@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       const createdUser = await tx.userProfile.create({
         data: { displayName: input.displayName, email, passwordHash },
       });
-      await tx.organization.create({
+      const organization = await tx.organization.create({
         data: {
           name: input.workspaceName,
           slug,
@@ -43,6 +43,12 @@ export async function POST(request: NextRequest) {
             create: { userId: createdUser.id, role, status: "ACTIVE" },
           },
         },
+      });
+      await tx.aiCreditAccount.create({
+        data: { organizationId: organization.id, balance: 100 },
+      });
+      await tx.aiUsageLedger.create({
+        data: { organizationId: organization.id, ownerUserId: createdUser.id, operation: "STARTER_GRANT", creditsDelta: 100, status: "COMPLETED", idempotencyKey: `starter-${organization.id}`, metadata: { reason: "Initial workspace allowance" } },
       });
       return createdUser;
     });

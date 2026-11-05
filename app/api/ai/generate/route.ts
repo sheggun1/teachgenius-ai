@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth";
@@ -84,7 +85,21 @@ function extractGeminiText(payload: unknown): string | null {
   return text || null;
 }
 
+async function refundAiCredit(organizationId: string, reservationId: string) {
+  await prisma.$transaction(async (tx) => {
+    const changed = await tx.aiUsageLedger.updateMany({
+      where: { id: reservationId, status: "RESERVED" },
+      data: { status: "REFUNDED", creditsDelta: 0 },
+    });
+    if (changed.count === 1) {
+      await tx.aiCreditAccount.update({ where: { organizationId }, data: { balance: { increment: 1 } } });
+    }
+  });
+}
+
 export async function POST(request: NextRequest) {
+  let reservedOrganizationId: string | null = null;
+  let reservationId: string | null = null;
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
@@ -141,6 +156,33 @@ export async function POST(request: NextRequest) {
         error: "AI generation is not configured yet. Add GEMINI_API_KEY to the Render environment variables.",
       }, { status: 503 });
     }
+
+    const reservation = await prisma.$transaction(async (tx) => {
+      const debit = await tx.aiCreditAccount.updateMany({
+        where: { organizationId: input.organizationId, balance: { gte: 1 } },
+        data: { balance: { decrement: 1 } },
+      });
+      if (debit.count !== 1) return null;
+      const ledger = await tx.aiUsageLedger.create({
+        data: {
+          ownerUserId: user.id,
+          organizationId: input.organizationId,
+          operation: "DOCUMENT_GENERATION",
+          creditsDelta: -1,
+          status: "RESERVED",
+          idempotencyKey: randomUUID(),
+          metadata: { type: input.type, curriculumTopicId: input.curriculumTopicId },
+        },
+        select: { id: true },
+      });
+      return ledger;
+    });
+    if (!reservation) {
+      const account = await prisma.aiCreditAccount.findUnique({ where: { organizationId: input.organizationId }, select: { balance: true } });
+      return NextResponse.json({ error: "This workspace has insufficient AI credits. Ask your workspace administrator to request a top-up.", balance: account?.balance ?? 0 }, { status: 402 });
+    }
+    reservedOrganizationId = input.organizationId;
+    reservationId = reservation.id;
 
     const curriculumContext = {
       subject: topicRecord.version.document.subjectName,
@@ -200,6 +242,8 @@ export async function POST(request: NextRequest) {
     if (!aiResponse.ok) {
       const detail = await aiResponse.text();
       console.error("Gemini provider error:", aiResponse.status, detail.slice(0, 1000));
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "Gemini could not complete the generation request" }, { status: 502 });
     }
 
@@ -207,6 +251,8 @@ export async function POST(request: NextRequest) {
     const rawContent = extractGeminiText(aiData);
     if (!rawContent) {
       console.error("Gemini returned no text output");
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "Gemini returned an empty response" }, { status: 502 });
     }
 
@@ -214,11 +260,15 @@ export async function POST(request: NextRequest) {
     try {
       decoded = JSON.parse(rawContent);
     } catch {
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "Gemini returned invalid structured content. Please try again." }, { status: 502 });
     }
     const validated = generatedContentSchema.safeParse(decoded);
     if (!validated.success) {
       console.error("Gemini output validation failed:", validated.error.flatten());
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "The AI response did not meet the document format requirements" }, { status: 502 });
     }
 
@@ -241,6 +291,7 @@ export async function POST(request: NextRequest) {
       await tx.documentVersion.create({
         data: { documentId: created.id, versionNumber: 1, content: finalContent, editedBy: user.id },
       });
+      await tx.aiUsageLedger.update({ where: { id: reservationId! }, data: { status: "COMPLETED" } });
       return created;
     });
 
@@ -255,6 +306,13 @@ export async function POST(request: NextRequest) {
       },
     }, { status: 201 });
   } catch (error) {
+    if (reservedOrganizationId && reservationId) {
+      try {
+        await refundAiCredit(reservedOrganizationId, reservationId);
+      } catch (refundError) {
+        console.error("AI credit refund failed; manual review required:", refundError);
+      }
+    }
     console.error("AI document generation failed:", error);
     return NextResponse.json({ error: "Unable to generate the document" }, { status: 500 });
   }

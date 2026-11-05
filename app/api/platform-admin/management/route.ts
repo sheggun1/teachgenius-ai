@@ -8,6 +8,7 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.enum(["SUSPEND_USER", "REACTIVATE_USER"]), userId: z.string().uuid(), reason: z.string().trim().max(500).optional() }),
   z.object({ action: z.enum(["SUSPEND_MEMBERSHIP", "REACTIVATE_MEMBERSHIP"]), membershipId: z.string().uuid(), reason: z.string().trim().max(500).optional() }),
   z.object({ action: z.literal("CREATE_WORKSPACE"), name: z.string().trim().min(2).max(120), type: z.enum(["SCHOOL", "EDUCATION_ORGANIZATION"]), adminUserId: z.string().uuid().optional() }),
+  z.object({ action: z.literal("GRANT_AI_CREDITS"), organizationId: z.string().uuid(), credits: z.number().int().min(1).max(10000), reason: z.string().trim().min(3).max(300) }),
 ]);
 
 async function requireAdmin() {
@@ -21,7 +22,7 @@ export async function GET() {
   try {
     const auth = await requireAdmin();
     if ("error" in auth) return auth.error;
-    const [users, organizations, auditLogs] = await Promise.all([
+    const [users, organizations, auditLogs, creditAccounts, recentAiUsage] = await Promise.all([
       prisma.userProfile.findMany({
         orderBy: { createdAt: "desc" }, take: 100,
         select: { id: true, displayName: true, email: true, platformRole: true, accountStatus: true, createdAt: true,
@@ -33,13 +34,16 @@ export async function GET() {
           memberships: { select: { id: true, userId: true, role: true, status: true, user: { select: { displayName: true, email: true } } }, orderBy: { createdAt: "asc" } },
           _count: { select: { memberships: true, curricula: true, documents: true } } },
       }),
-      prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 20,
-         }),
+      prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
+      prisma.aiCreditAccount.findMany({ where: { organizationId: { not: null } }, select: { organizationId: true, balance: true, updatedAt: true } }),
+      prisma.aiUsageLedger.findMany({ where: { organizationId: { not: null } }, orderBy: { createdAt: "desc" }, take: 30, select: { organizationId: true, operation: true, creditsDelta: true, status: true, createdAt: true } }),
     ]);
     return NextResponse.json({
       users: users.map(u => ({ ...u, createdAt: u.createdAt.toISOString() })),
       organizations: organizations.map(o => ({ ...o, createdAt: o.createdAt.toISOString() })),
       auditLogs: auditLogs.map(a => ({ id: a.id, action: a.action, targetUserId: a.targetUserId, organizationId: a.organizationId, details: a.details, createdAt: a.createdAt.toISOString() })),
+      creditAccounts,
+      recentAiUsage: recentAiUsage.map(item => ({ ...item, createdAt: item.createdAt.toISOString() })),
     });
   } catch (error) {
     console.error("Platform management read failed:", error);
@@ -55,6 +59,25 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) return NextResponse.json({ error: "Invalid management request", details: parsed.error.flatten() }, { status: 400 });
     const input = parsed.data;
     const actorId = auth.user.id;
+
+    if (input.action === "GRANT_AI_CREDITS") {
+      const organization = await prisma.organization.findUnique({ where: { id: input.organizationId }, select: { id: true, name: true } });
+      if (!organization) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+      await prisma.$transaction(async tx => {
+        await tx.aiCreditAccount.upsert({
+          where: { organizationId: organization.id },
+          create: { organizationId: organization.id, balance: input.credits },
+          update: { balance: { increment: input.credits } },
+        });
+        await tx.aiUsageLedger.create({
+          data: { organizationId: organization.id, operation: "ADMIN_GRANT", creditsDelta: input.credits, status: "COMPLETED", idempotencyKey: randomUUID(), metadata: { reason: input.reason, grantedBy: actorId } },
+        });
+        await tx.platformAdminAuditLog.create({
+          data: { actorUserId: actorId, organizationId: organization.id, action: "GRANT_AI_CREDITS", details: { credits: input.credits, reason: input.reason } },
+        });
+      });
+      return NextResponse.json({ success: true, message: `${input.credits} AI credits added to ${organization.name}` });
+    }
 
     if (input.action === "SUSPEND_USER" || input.action === "REACTIVATE_USER") {
       const target = await prisma.userProfile.findUnique({ where: { id: input.userId }, select: { id: true, platformRole: true, accountStatus: true } });
@@ -114,7 +137,9 @@ export async function POST(request: NextRequest) {
         if (!admin || admin.accountStatus !== "ACTIVE") throw new Error("Selected workspace administrator is unavailable");
         await tx.membership.create({ data: { userId: admin.id, organizationId: organization.id, role: "SCHOOL_ADMIN", status: "ACTIVE" } });
       }
-      await tx.platformAdminAuditLog.create({ data: { actorUserId: actorId, organizationId: organization.id, action: "CREATE_WORKSPACE", details: { name: input.name, type: input.type, adminUserId: input.adminUserId || null } } });
+      await tx.aiCreditAccount.create({ data: { organizationId: organization.id, balance: 100 } });
+      await tx.aiUsageLedger.create({ data: { organizationId: organization.id, operation: "STARTER_GRANT", creditsDelta: 100, status: "COMPLETED", idempotencyKey: randomUUID(), metadata: { reason: "Initial workspace allowance" } } });
+      await tx.platformAdminAuditLog.create({ data: { actorUserId: actorId, organizationId: organization.id, action: "CREATE_WORKSPACE", details: { name: input.name, type: input.type, adminUserId: input.adminUserId || null, starterCredits: 100 } } });
       return organization;
     });
     return NextResponse.json({ success: true, workspace: created }, { status: 201 });
