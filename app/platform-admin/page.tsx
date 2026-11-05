@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import LogoutButton from "@/app/components/logout-button";
+import PlatformManagement from "@/app/platform-admin/platform-management";
 
 const panel = {
   background: "#fff",
@@ -81,6 +82,7 @@ export default async function PlatformAdminPage() {
       </header>
 
       <div style={{ maxWidth: 1240, margin: "0 auto", padding: "34px 24px 60px" }}>
+        <PlatformManagement />
         <section style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 18, marginBottom: 26 }}>
           <div>
             <p style={{ ...label, margin: "0 0 8px" }}>PLATFORM OVERVIEW</p>
