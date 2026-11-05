@@ -11,36 +11,30 @@ enum PlatformRole {
   USER
   PLATFORM_ADMIN
 }
-
-enum UserAccountStatus {
+enum PlatformAccountStatus {
   ACTIVE
   SUSPENDED
 }
-
 enum OrganizationType {
   SCHOOL
   EDUCATION_ORGANIZATION
 }
-
 enum MembershipRole {
   SCHOOL_ADMIN
   TEACHER
   STUDENT
 }
-
 enum MembershipStatus {
   INVITED
   ACTIVE
   SUSPENDED
 }
-
 enum CurriculumStatus {
   DRAFT
   IN_REVIEW
   PUBLISHED
   ARCHIVED
 }
-
 enum GeneratedDocumentType {
   LESSON_NOTE
   LESSON_PLAN
@@ -49,14 +43,12 @@ enum GeneratedDocumentType {
   ASSIGNMENT
   REVISION_NOTE
 }
-
 enum DocumentStatus {
   DRAFT
   REVIEW
   APPROVED
   ARCHIVED
 }
-
 model UserProfile {
   id             String       @id @default(uuid()) @db.Uuid
   authUserId     String?      @unique @db.Uuid
@@ -64,7 +56,9 @@ model UserProfile {
   email          String?      @unique
   passwordHash   String?
   platformRole   PlatformRole @default(USER)
-  accountStatus UserAccountStatus @default(ACTIVE)
+  accountStatus  PlatformAccountStatus @default(ACTIVE)
+  suspendedAt    DateTime?
+  suspensionReason String?
   emailVerifiedAt DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -72,21 +66,6 @@ model UserProfile {
   authSessions  AuthSession[]
   ownedDocuments GeneratedDocument[] @relation("PersonalDocuments")
 }
-
-model PlatformAdminAuditLog {
-  id             String   @id @default(uuid()) @db.Uuid
-  actorUserId    String   @db.Uuid
-  targetUserId   String?  @db.Uuid
-  organizationId String?  @db.Uuid
-  action         String
-  details        Json?
-  createdAt      DateTime @default(now())
-
-  @@index([actorUserId, createdAt])
-  @@index([targetUserId, createdAt])
-  @@index([organizationId, createdAt])
-}
-
 model AuthSession {
   id        String      @id @default(uuid()) @db.Uuid
   userId    String      @db.Uuid
@@ -95,10 +74,8 @@ model AuthSession {
   revokedAt DateTime?
   createdAt DateTime    @default(now())
   user      UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId, expiresAt])
 }
-
 model Organization {
   id          String       @id @default(uuid()) @db.Uuid
   name        String
@@ -113,7 +90,6 @@ model Organization {
   curricula   CurriculumDocument[]
   documents   GeneratedDocument[]
 }
-
 model Membership {
   id             String           @id @default(uuid()) @db.Uuid
   userId         String           @db.Uuid
@@ -124,11 +100,9 @@ model Membership {
   updatedAt      DateTime         @updatedAt
   user           UserProfile      @relation(fields: [userId], references: [id], onDelete: Cascade)
   organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
   @@unique([userId, organizationId])
   @@index([organizationId, role, status])
 }
-
 model AcademicSession {
   id             String       @id @default(uuid()) @db.Uuid
   organizationId String       @db.Uuid
@@ -138,10 +112,8 @@ model AcademicSession {
   isCurrent      Boolean      @default(false)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   terms          AcademicTerm[]
-
   @@unique([organizationId, name])
 }
-
 model AcademicTerm {
   id        String         @id @default(uuid()) @db.Uuid
   sessionId String         @db.Uuid
@@ -149,10 +121,8 @@ model AcademicTerm {
   startsAt  DateTime?
   endsAt    DateTime?
   session   AcademicSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-
   @@unique([sessionId, name])
 }
-
 model SchoolClass {
   id             String       @id @default(uuid()) @db.Uuid
   organizationId String       @db.Uuid
@@ -160,31 +130,25 @@ model SchoolClass {
   level          String?
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   enrollments    ClassEnrollment[]
-
   @@unique([organizationId, name])
 }
-
 model Subject {
   id             String       @id @default(uuid()) @db.Uuid
   organizationId String       @db.Uuid
   name           String
   code           String?
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
   @@unique([organizationId, name])
 }
-
 model ClassEnrollment {
   id        String      @id @default(uuid()) @db.Uuid
   classId   String      @db.Uuid
   studentId String      @db.Uuid
-  createdAt DateTime    @default(now())
+  createdAt DateTime    @default(now()) @db.Timestamp(3)
   schoolClass SchoolClass @relation(fields: [classId], references: [id], onDelete: Cascade)
-
   @@unique([classId, studentId])
   @@index([studentId])
 }
-
 model CurriculumDocument {
   id             String       @id @default(uuid()) @db.Uuid
   organizationId String       @db.Uuid
@@ -197,10 +161,8 @@ model CurriculumDocument {
   updatedAt      DateTime     @updatedAt
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   versions       CurriculumVersion[]
-
   @@index([organizationId, status])
 }
-
 model CurriculumVersion {
   id                   String             @id @default(uuid()) @db.Uuid
   curriculumDocumentId String             @db.Uuid
@@ -211,10 +173,8 @@ model CurriculumVersion {
   createdAt            DateTime           @default(now())
   document             CurriculumDocument @relation(fields: [curriculumDocumentId], references: [id], onDelete: Cascade)
   topics               CurriculumTopic[]
-
   @@unique([curriculumDocumentId, versionNumber])
 }
-
 model CurriculumTopic {
   id                  String            @id @default(uuid()) @db.Uuid
   curriculumVersionId String            @db.Uuid
@@ -225,10 +185,8 @@ model CurriculumTopic {
   learningObjectives  Json?
   sortOrder           Int               @default(0)
   version             CurriculumVersion @relation(fields: [curriculumVersionId], references: [id], onDelete: Cascade)
-
   @@index([curriculumVersionId, sortOrder])
 }
-
 model GeneratedDocument {
   id             String                @id @default(uuid()) @db.Uuid
   ownerUserId    String?               @db.Uuid
@@ -247,12 +205,10 @@ model GeneratedDocument {
   owner          UserProfile?          @relation("PersonalDocuments", fields: [ownerUserId], references: [id], onDelete: SetNull)
   organization   Organization?         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   versions       DocumentVersion[]
-
   @@index([ownerUserId, createdAt])
   @@index([organizationId, createdAt])
   @@index([organizationId, type, status])
 }
-
 model DocumentVersion {
   id                 String            @id @default(uuid()) @db.Uuid
   documentId         String            @db.Uuid
@@ -261,20 +217,16 @@ model DocumentVersion {
   editedBy           String?           @db.Uuid
   createdAt          DateTime          @default(now())
   document           GeneratedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
-
   @@unique([documentId, versionNumber])
 }
-
 model AiCreditAccount {
   id             String   @id @default(uuid()) @db.Uuid
   ownerUserId    String?  @unique @db.Uuid
   organizationId String?  @unique @db.Uuid
   balance        Int      @default(0)
   updatedAt      DateTime @updatedAt
-
   @@index([organizationId])
 }
-
 model AiUsageLedger {
   id             String   @id @default(uuid()) @db.Uuid
   ownerUserId    String?  @db.Uuid
@@ -285,7 +237,6 @@ model AiUsageLedger {
   idempotencyKey String   @unique
   metadata       Json?
   createdAt      DateTime @default(now())
-
   @@index([ownerUserId, createdAt])
   @@index([organizationId, createdAt])
 }
