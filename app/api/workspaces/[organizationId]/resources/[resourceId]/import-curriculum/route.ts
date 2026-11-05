@@ -37,6 +37,9 @@ export async function POST(request: NextRequest, context: Context) {
     }
     const resource = await prisma.resourceAsset.findFirst({ where: { id: resourceId, organizationId } });
     if (!resource) return NextResponse.json({ error: "Resource not found" }, { status: 404 });
+    if (resource.category !== "CURRICULUM" && resource.category !== "SCHEME_OF_WORK") {
+      return NextResponse.json({ error: "Only curriculum documents and schemes of work can be converted into curriculum records." }, { status: 422 });
+    }
     const admin = platformAdmin || membership?.role === "SCHOOL_ADMIN";
     if (!admin && resource.uploadedBy !== user.id && !(resource.visibility === "WORKSPACE" && resource.reviewStatus === "APPROVED")) {
       return NextResponse.json({ error: "This resource is not available to you" }, { status: 403 });
