@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +26,16 @@ function outputText(payload: unknown): string | null {
   return parts.join("") || null;
 }
 
+async function refundImportCredit(organizationId: string, reservationId: string) {
+  await prisma.$transaction(async tx => {
+    const changed = await tx.aiUsageLedger.updateMany({ where: { id: reservationId, status: "RESERVED" }, data: { status: "REFUNDED", creditsDelta: 0 } });
+    if (changed.count === 1) await tx.aiCreditAccount.update({ where: { organizationId }, data: { balance: { increment: 1 } } });
+  });
+}
+
 export async function POST(request: NextRequest, context: Context) {
+  let reservedOrganizationId: string | null = null;
+  let reservationId: string | null = null;
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
@@ -50,6 +60,23 @@ export async function POST(request: NextRequest, context: Context) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "AI import is not configured. Add GEMINI_API_KEY to the server environment." }, { status: 503 });
 
+    const reservation = await prisma.$transaction(async tx => {
+      const debit = await tx.aiCreditAccount.updateMany({ where: { organizationId, balance: { gte: 1 } }, data: { balance: { decrement: 1 } } });
+      if (debit.count !== 1) return null;
+      return tx.aiUsageLedger.create({ data: { ownerUserId: user.id, organizationId, operation: "CURRICULUM_IMPORT", creditsDelta: -1, status: "RESERVED", idempotencyKey: randomUUID(), metadata: { resourceId, resourceName: resource.originalName } }, select: { id: true } });
+    });
+    if (!reservation) {
+      const account = await prisma.aiCreditAccount.findUnique({ where: { organizationId }, select: { balance: true } });
+      return NextResponse.json({ error: "This workspace has insufficient AI credits to convert the curriculum. Ask your workspace administrator to request a top-up.", balance: account?.balance ?? 0 }, { status: 402 });
+    }
+    reservedOrganizationId = organizationId;
+    reservationId = reservation.id;
+    const fail = async (message: string) => {
+      await refundImportCredit(organizationId, reservation.id);
+      reservedOrganizationId = null;
+      reservationId = null;
+      return NextResponse.json({ error: message }, { status: 502 });
+    };
     const schema = {
       type: "object",
       properties: {
@@ -81,15 +108,16 @@ export async function POST(request: NextRequest, context: Context) {
     });
     if (!response.ok) {
       console.error("Gemini curriculum import error:", response.status, (await response.text()).slice(0, 800));
-      return NextResponse.json({ error: "Gemini could not extract the curriculum. Try again later." }, { status: 502 });
+      return fail("Gemini could not extract the curriculum. Your credit has been returned. Try again later.");
     }
     const raw = outputText(await response.json());
-    if (!raw) return NextResponse.json({ error: "Gemini returned no curriculum data" }, { status: 502 });
+    if (!raw) return fail("Gemini returned no curriculum data. Your credit has been returned.");
     let decoded: unknown;
-    try { decoded = JSON.parse(raw); } catch { return NextResponse.json({ error: "Gemini returned invalid curriculum data" }, { status: 502 }); }
+    try { decoded = JSON.parse(raw); } catch { return fail("Gemini returned invalid curriculum data. Your credit has been returned."); }
     const parsed = outputSchema.safeParse(decoded);
-    if (!parsed.success) return NextResponse.json({ error: "The extracted curriculum did not pass validation", details: parsed.error.flatten() }, { status: 502 });
-    const curriculum = await prisma.curriculumDocument.create({
+    if (!parsed.success) return fail("The extracted curriculum did not pass validation. Your credit has been returned.");
+    const curriculum = await prisma.$transaction(async tx => {
+      const created = await tx.curriculumDocument.create({
       data: {
         organizationId, title: parsed.data.title, subjectName: parsed.data.subjectName || null,
         className: parsed.data.className || null, createdBy: user.id, status: "DRAFT",
@@ -101,9 +129,18 @@ export async function POST(request: NextRequest, context: Context) {
         } } },
       },
       include: { versions: { include: { topics: true } } },
+      });
+      await tx.aiUsageLedger.update({ where: { id: reservation.id }, data: { status: "COMPLETED" } });
+      return created;
     });
-    return NextResponse.json({ success: true, curriculum, message: "Curriculum extracted and saved as a draft. A School Admin must review and publish it before teachers can use it for AI generation." }, { status: 201 });
+    reservedOrganizationId = null;
+    reservationId = null;
+    return NextResponse.json({ success: true, curriculum, message: "Curriculum extracted and saved as a draft. One AI credit was used. A School Admin must review and publish it before teachers can use it for AI generation." }, { status: 201 });
   } catch (error) {
+    if (reservedOrganizationId && reservationId) {
+      try { await refundImportCredit(reservedOrganizationId, reservationId); }
+      catch (refundError) { console.error("Curriculum import credit refund failed; manual review required:", refundError); }
+    }
     console.error("Curriculum import failed:", error);
     return NextResponse.json({ error: "Unable to import this curriculum file" }, { status: 500 });
   }
