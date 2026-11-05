@@ -45,7 +45,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ org
       select: { id: true, title: true, originalName: true, mimeType: true, fileSize: true, category: true, visibility: true, reviewStatus: true, reviewNote: true, createdAt: true, uploadedBy: true, uploader: { select: { displayName: true, email: true } } },
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json({ resources, canReview: admin });
+    return NextResponse.json({ resources: resources.map(({ extractedText, ...resource }) => ({ ...resource, extractedTextAvailable: Boolean(extractedText) })), canReview: admin });
   } catch (error) {
     console.error("Resource listing failed:", error);
     return NextResponse.json({ error: "Unable to load resources" }, { status: 500 });
