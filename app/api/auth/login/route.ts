@@ -18,6 +18,9 @@ export async function POST(request: NextRequest) {
     if (!user?.passwordHash || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
       return NextResponse.json({ error: "Email or password is incorrect" }, { status: 401 });
     }
+    if (user.accountStatus === "SUSPENDED") {
+      return NextResponse.json({ error: "This TeachGenius AI account has been suspended. Contact platform support." }, { status: 403 });
+    }
 
     await createSession(user.id);
     return NextResponse.json({
