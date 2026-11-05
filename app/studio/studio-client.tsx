@@ -22,7 +22,7 @@ export default function StudioClient({displayName}:{displayName:string}) {
   const [error,setError]=useState("");
 
   useEffect(()=>{
-    fetch("/api/workspaces").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to load workspaces");setWorkspaces(d.workspaces||[]);if(d.workspaces?.length)setWorkspaceId(d.workspaces[0].id);}).catch(e=>setError(e.message));
+    fetch("/api/workspaces").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to load workspaces");const available=(d.workspaces||[]).filter((w:Workspace)=>w.role==="TEACHER"||w.role==="SCHOOL_ADMIN");setWorkspaces(available);if(available.length)setWorkspaceId(available[0].id);}).catch(e=>setError(e.message));
   },[]);
   useEffect(()=>{
     if(!workspaceId){setTopics([]);return;}
