@@ -35,6 +35,27 @@ enum CurriculumStatus {
   PUBLISHED
   ARCHIVED
 }
+enum ResourceCategory {
+  CURRICULUM
+  SCHEME_OF_WORK
+  LESSON_NOTE
+  LESSON_PLAN
+  ASSIGNMENT
+  WORKSHEET
+  QUESTION_PAPER
+  PRESENTATION
+  REFERENCE
+  OTHER
+}
+enum ResourceVisibility {
+  PRIVATE
+  WORKSPACE
+}
+enum ResourceReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
 enum GeneratedDocumentType {
   LESSON_NOTE
   LESSON_PLAN
@@ -65,6 +86,7 @@ model UserProfile {
   memberships   Membership[]
   authSessions  AuthSession[]
   ownedDocuments GeneratedDocument[] @relation("PersonalDocuments")
+  uploadedResources ResourceAsset[] @relation("ResourceUploader")
 }
 model AuthSession {
   id        String      @id @default(uuid()) @db.Uuid
@@ -89,6 +111,7 @@ model Organization {
   subjects    Subject[]
   curricula   CurriculumDocument[]
   documents   GeneratedDocument[]
+  resources   ResourceAsset[]
 }
 model Membership {
   id             String           @id @default(uuid()) @db.Uuid
@@ -254,4 +277,28 @@ model PlatformAdminAuditLog {
   @@index([actorUserId, createdAt])
   @@index([targetUserId, createdAt])
   @@index([organizationId, createdAt])
+}
+
+model ResourceAsset {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizationId String               @db.Uuid
+  uploadedBy     String               @db.Uuid
+  title          String
+  originalName   String
+  mimeType       String
+  fileSize       Int
+  category       ResourceCategory     @default(OTHER)
+  visibility     ResourceVisibility   @default(PRIVATE)
+  reviewStatus   ResourceReviewStatus @default(PENDING)
+  extractedText  String?              @db.Text
+  fileData       Bytes                @db.ByteA
+  reviewedBy     String?              @db.Uuid
+  reviewedAt     DateTime?
+  reviewNote     String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploader       UserProfile          @relation("ResourceUploader", fields: [uploadedBy], references: [id], onDelete: Cascade)
+  @@index([organizationId, reviewStatus, visibility])
+  @@index([uploadedBy, createdAt])
 }
