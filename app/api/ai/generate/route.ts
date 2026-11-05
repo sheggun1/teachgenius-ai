@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth";
@@ -85,6 +86,8 @@ function extractGeminiText(payload: unknown): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  let reservedOrganizationId: string | null = null;
+  let reservationId: string | null = null;
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
@@ -141,6 +144,33 @@ export async function POST(request: NextRequest) {
         error: "AI generation is not configured yet. Add GEMINI_API_KEY to the Render environment variables.",
       }, { status: 503 });
     }
+
+    const reservation = await prisma.$transaction(async (tx) => {
+      const debit = await tx.aiCreditAccount.updateMany({
+        where: { organizationId: input.organizationId, balance: { gte: 1 } },
+        data: { balance: { decrement: 1 } },
+      });
+      if (debit.count !== 1) return null;
+      const ledger = await tx.aiUsageLedger.create({
+        data: {
+          ownerUserId: user.id,
+          organizationId: input.organizationId,
+          operation: "DOCUMENT_GENERATION",
+          creditsDelta: -1,
+          status: "RESERVED",
+          idempotencyKey: randomUUID(),
+          metadata: { type: input.type, curriculumTopicId: input.curriculumTopicId },
+        },
+        select: { id: true },
+      });
+      return ledger;
+    });
+    if (!reservation) {
+      const account = await prisma.aiCreditAccount.findUnique({ where: { organizationId: input.organizationId }, select: { balance: true } });
+      return NextResponse.json({ error: "This workspace has insufficient AI credits. Ask your workspace administrator to request a top-up.", balance: account?.balance ?? 0 }, { status: 402 });
+    }
+    reservedOrganizationId = input.organizationId;
+    reservationId = reservation.id;
 
     const curriculumContext = {
       subject: topicRecord.version.document.subjectName,
@@ -241,6 +271,7 @@ export async function POST(request: NextRequest) {
       await tx.documentVersion.create({
         data: { documentId: created.id, versionNumber: 1, content: finalContent, editedBy: user.id },
       });
+      await tx.aiUsageLedger.update({ where: { id: reservationId! }, data: { status: "COMPLETED" } });
       return created;
     });
 
@@ -255,6 +286,16 @@ export async function POST(request: NextRequest) {
       },
     }, { status: 201 });
   } catch (error) {
+    if (reservedOrganizationId && reservationId) {
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.aiCreditAccount.update({ where: { organizationId: reservedOrganizationId! }, data: { balance: { increment: 1 } } });
+          await tx.aiUsageLedger.update({ where: { id: reservationId! }, data: { status: "REFUNDED", creditsDelta: 0 } });
+        });
+      } catch (refundError) {
+        console.error("AI credit refund failed; manual review required:", refundError);
+      }
+    }
     console.error("AI document generation failed:", error);
     return NextResponse.json({ error: "Unable to generate the document" }, { status: 500 });
   }
