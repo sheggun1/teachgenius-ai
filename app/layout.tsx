@@ -1,16 +1,6 @@
 import type { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "TeachGenius AI",
-  description: "An AI-powered educational platform for teachers, students and schools."
-};
-
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <html lang="en">
-      <body style={{ margin: 0, fontFamily: "Arial, Helvetica, sans-serif" }}>
-        {children}
-      </body>
-    </html>
-  );
+import "./globals.css";
+export const metadata:Metadata={title:"TeachGenius AI | Teaching Workspace",description:"A professional AI-powered teaching and learning workspace for educators and schools."};
+export default function RootLayout({children}:{children:React.ReactNode}){
+ return <html lang="en"><body>{children}</body></html>;
 }
