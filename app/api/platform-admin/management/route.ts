@@ -22,7 +22,7 @@ export async function GET() {
   try {
     const auth = await requireAdmin();
     if ("error" in auth) return auth.error;
-    const [users, organizations, auditLogs] = await Promise.all([
+    const [users, organizations, auditLogs, creditAccounts, recentAiUsage] = await Promise.all([
       prisma.userProfile.findMany({
         orderBy: { createdAt: "desc" }, take: 100,
         select: { id: true, displayName: true, email: true, platformRole: true, accountStatus: true, createdAt: true,
@@ -34,13 +34,16 @@ export async function GET() {
           memberships: { select: { id: true, userId: true, role: true, status: true, user: { select: { displayName: true, email: true } } }, orderBy: { createdAt: "asc" } },
           _count: { select: { memberships: true, curricula: true, documents: true } } },
       }),
-      prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 20,
-         }),
+      prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
+      prisma.aiCreditAccount.findMany({ where: { organizationId: { not: null } }, select: { organizationId: true, balance: true, updatedAt: true } }),
+      prisma.aiUsageLedger.findMany({ where: { organizationId: { not: null } }, orderBy: { createdAt: "desc" }, take: 30, select: { organizationId: true, operation: true, creditsDelta: true, status: true, createdAt: true } }),
     ]);
     return NextResponse.json({
       users: users.map(u => ({ ...u, createdAt: u.createdAt.toISOString() })),
       organizations: organizations.map(o => ({ ...o, createdAt: o.createdAt.toISOString() })),
       auditLogs: auditLogs.map(a => ({ id: a.id, action: a.action, targetUserId: a.targetUserId, organizationId: a.organizationId, details: a.details, createdAt: a.createdAt.toISOString() })),
+      creditAccounts,
+      recentAiUsage: recentAiUsage.map(item => ({ ...item, createdAt: item.createdAt.toISOString() })),
     });
   } catch (error) {
     console.error("Platform management read failed:", error);
