@@ -20,7 +20,7 @@ async function requireAdmin() {
 export async function GET() {
   try {
     const auth = await requireAdmin();
-    if (auth.error) return auth.error;
+    if ("error" in auth) return auth.error;
     const [users, organizations, auditLogs] = await Promise.all([
       prisma.userProfile.findMany({
         orderBy: { createdAt: "desc" }, take: 100,
