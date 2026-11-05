@@ -51,6 +51,10 @@ export async function getCurrentUser() {
     include: { user: true },
   });
   if (!session || session.revokedAt || session.expiresAt <= new Date()) return null;
+  if (session.user.accountStatus !== "ACTIVE") {
+    await prisma.authSession.updateMany({ where: { userId: session.userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    return null;
+  }
   return session.user;
 }
 
