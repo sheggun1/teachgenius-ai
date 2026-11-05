@@ -27,6 +27,62 @@ const generatedContentSchema = z.object({
   })).max(100),
 });
 
+const generatedContentJsonSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    topic: { type: "string" },
+    learningObjectives: { type: "array", items: { type: "string" }, maxItems: 30 },
+    sections: {
+      type: "array",
+      minItems: 1,
+      maxItems: 30,
+      items: {
+        type: "object",
+        properties: {
+          heading: { type: "string" },
+          body: { type: "string" },
+        },
+        required: ["heading", "body"],
+      },
+    },
+    assessmentQuestions: {
+      type: "array",
+      maxItems: 100,
+      items: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          answer: { type: "string" },
+          marks: { type: "number" },
+        },
+        required: ["question"],
+      },
+    },
+  },
+  required: ["title", "topic", "learningObjectives", "sections", "assessmentQuestions"],
+};
+
+function extractGeminiText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const data = payload as {
+    output_text?: unknown;
+    steps?: Array<{
+      type?: string;
+      content?: Array<{ type?: string; text?: string }>;
+    }>;
+  };
+  if (typeof data.output_text === "string") return data.output_text;
+  if (!Array.isArray(data.steps)) return null;
+  const text = data.steps
+    .filter((step) => step.type === "model_output")
+    .flatMap((step) => step.content ?? [])
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("");
+  return text || null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser();
@@ -58,8 +114,12 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: "AI generation is not configured yet. Add OPENAI_API_KEY to Render environment variables." }, { status: 503 });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({
+        error: "AI generation is not configured yet. Add GEMINI_API_KEY to the Render environment variables.",
+      }, { status: 503 });
+    }
 
     const curriculumContext = {
       subject: topicRecord.version.document.subjectName,
@@ -72,63 +132,70 @@ export async function POST(request: NextRequest) {
       sourceText: topicRecord.version.extractedText,
     };
 
-    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const systemInstruction = [
+      "You are an educational content generator.",
+      "Use only the supplied approved curriculum topic, subtopic, objectives, and source text.",
+      "Do not add, invent, broaden, or substitute topics, learning objectives, or curriculum coverage.",
+      "If the source does not provide enough information for a requested detail, state that limitation in a section instead of inventing curriculum facts.",
+      "Return the exact JSON structure required by the response schema.",
+      "Create a clear, age-appropriate, editable teaching document.",
+      "Keep every section and assessment question within the approved topic and objectives.",
+    ].join(" ");
+
+    const prompt = JSON.stringify({
+      documentType: input.type,
+      requestedTitle: input.title,
+      additionalInstructions: input.additionalInstructions,
+      approvedCurriculum: curriculumContext,
+      outputRequirements: "Keep the document faithful to the approved curriculum. Do not introduce unrelated content.",
+    });
+
+    const aiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        "x-goog-api-key": apiKey,
         "Content-Type": "application/json",
+        "Api-Revision": "2026-05-20",
       },
       body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content: [
-              "You are an educational content generator.",
-              "Use only the supplied approved curriculum topic, subtopic, objectives, and source text.",
-              "Do not add, invent, broaden, or substitute topics, learning objectives, or curriculum coverage.",
-              "If the source does not provide enough information for a requested detail, state that limitation in a section instead of inventing curriculum facts.",
-              "Return only valid JSON with keys: title, topic, learningObjectives, sections, assessmentQuestions.",
-              "sections must be an array of objects with heading and body.",
-              "assessmentQuestions must be an array of objects with question and optional answer and marks.",
-            ].join(" "),
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              documentType: input.type,
-              requestedTitle: input.title,
-              additionalInstructions: input.additionalInstructions,
-              approvedCurriculum: curriculumContext,
-              outputRequirements: "Create a clear, age-appropriate, editable teaching document. Keep every section within the approved topic and objectives.",
-            }),
-          },
-        ],
-        temperature: 0.2,
+        model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+        input: prompt,
+        system_instruction: systemInstruction,
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: generatedContentJsonSchema,
+        },
+        generation_config: {
+          temperature: 0.2,
+          max_output_tokens: 8192,
+        },
       }),
       signal: AbortSignal.timeout(60000),
     });
 
     if (!aiResponse.ok) {
       const detail = await aiResponse.text();
-      console.error("AI provider error:", aiResponse.status, detail.slice(0, 1000));
-      return NextResponse.json({ error: "The AI provider could not complete the request" }, { status: 502 });
+      console.error("Gemini provider error:", aiResponse.status, detail.slice(0, 1000));
+      return NextResponse.json({ error: "Gemini could not complete the generation request" }, { status: 502 });
     }
 
-    const aiData = await aiResponse.json();
-    const rawContent = aiData.choices?.[0]?.message?.content;
-    if (typeof rawContent !== "string") return NextResponse.json({ error: "The AI returned an empty response" }, { status: 502 });
+    const aiData: unknown = await aiResponse.json();
+    const rawContent = extractGeminiText(aiData);
+    if (!rawContent) {
+      console.error("Gemini returned no text output");
+      return NextResponse.json({ error: "Gemini returned an empty response" }, { status: 502 });
+    }
 
     let decoded: unknown;
     try {
       decoded = JSON.parse(rawContent);
     } catch {
-      return NextResponse.json({ error: "The AI returned invalid structured content. Please try again." }, { status: 502 });
+      return NextResponse.json({ error: "Gemini returned invalid structured content. Please try again." }, { status: 502 });
     }
     const validated = generatedContentSchema.safeParse(decoded);
     if (!validated.success) {
-      console.error("AI output validation failed:", validated.error.flatten());
+      console.error("Gemini output validation failed:", validated.error.flatten());
       return NextResponse.json({ error: "The AI response did not meet the document format requirements" }, { status: 502 });
     }
 
