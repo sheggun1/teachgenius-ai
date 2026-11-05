@@ -33,7 +33,7 @@ export default function PlatformManagement() {
   }
   useEffect(() => { load().catch(e => setNotice(e.message)); }, []);
 
-  async function act(payload: Record<string, string>) {
+  async function act(payload: Record<string, string | number>) {
     const key = payload.userId || payload.membershipId || payload.action || "workspace";
     setBusy(key); setNotice("");
     try {
