@@ -109,7 +109,7 @@ export default async function PlatformAdminPage() {
         </section>
 
         <section style={{ ...panel, marginBottom: 22 }}>
-          <div style={{ fontSize: 17, fontWeight: 750 }}>Administration modules</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}><div style={{ fontSize: 17, fontWeight: 750 }}>Administration modules</div><Link href="/resources" style={{ background: "#155eef", color: "#fff", padding: "10px 14px", borderRadius: 9, textDecoration: "none", fontSize: 12, fontWeight: 800 }}>Open Resource Library →</Link></div>
           <p style={{ color: "#64748b", fontSize: 13, margin: "6px 0 15px", lineHeight: 1.6 }}>Use the management tools above to control platform accounts and workspace memberships. The overview below provides a read-only snapshot of platform activity.</p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
             {[

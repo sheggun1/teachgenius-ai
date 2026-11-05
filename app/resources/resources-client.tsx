@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 
 type Workspace = { id: string; name: string; type: string; role?: string };
-type Resource = { id: string; title: string; originalName: string; mimeType: string; fileSize: number; category: string; visibility: string; reviewStatus: string; reviewNote?: string | null; createdAt: string; uploadedBy: string; uploader: { displayName: string | null; email: string | null } };
+type Resource = { extractedTextAvailable: boolean; id: string; title: string; originalName: string; mimeType: string; fileSize: number; category: string; visibility: string; reviewStatus: string; reviewNote?: string | null; createdAt: string; uploadedBy: string; uploader: { displayName: string | null; email: string | null } };
 const categories = ["CURRICULUM","SCHEME_OF_WORK","LESSON_NOTE","LESSON_PLAN","ASSIGNMENT","WORKSHEET","QUESTION_PAPER","PRESENTATION","REFERENCE","OTHER"];
 const label = (value: string) => value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, x => x.toUpperCase());
 const panel: React.CSSProperties = { background: "#fff", border: "1px solid #e5eaf2", borderRadius: 14, padding: 20 };
@@ -17,6 +17,7 @@ export default function ResourcesClient({ workspaces, isPlatformAdmin, userId }:
   const [file, setFile] = useState<File | null>(null);
   const [requestReview, setRequestReview] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [importing, setImporting] = useState("");
   const [notice, setNotice] = useState("");
 
   async function load() {
@@ -60,6 +61,17 @@ export default function ResourcesClient({ workspaces, isPlatformAdmin, userId }:
     finally { setBusy(false); }
   }
 
+  async function importCurriculum(resourceId: string) {
+    setImporting(resourceId); setNotice("");
+    try {
+      const response = await fetch("/api/workspaces/" + workspaceId + "/resources/" + resourceId + "/import-curriculum", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Curriculum extraction failed");
+      setNotice(data.message + " Curriculum: " + data.curriculum.title + " (" + data.curriculum.versions[0].topics.length + " topics).");
+    } catch (e) { setNotice(e instanceof Error ? e.message : "Curriculum extraction failed"); }
+    finally { setImporting(""); }
+  }
+
   async function remove(resourceId: string) {
     if (!window.confirm("Delete this uploaded resource permanently?")) return;
     setBusy(true); setNotice("");
@@ -96,7 +108,7 @@ export default function ResourcesClient({ workspaces, isPlatformAdmin, userId }:
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 20, padding: "5px 8px", background: r.reviewStatus === "APPROVED" ? "#ecfdf3" : r.reviewStatus === "PENDING" ? "#fff7ed" : "#fef2f2", color: r.reviewStatus === "APPROVED" ? "#166534" : r.reviewStatus === "PENDING" ? "#9a3412" : "#b91c1c" }}>{label(r.reviewStatus)}</span>
             <a href={"/api/workspaces/" + workspaceId + "/resources/" + r.id + "/file"} style={{ color: "#155eef", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>Download</a>
-            {canReview && r.reviewStatus === "PENDING" && <><button disabled={busy} onClick={() => review(r.id, "APPROVE")} style={{ border: 0, borderRadius: 7, padding: "7px 9px", background: "#dcfce7", color: "#166534", fontWeight: 700 }}>Approve</button><button disabled={busy} onClick={() => review(r.id, "REJECT")} style={{ border: 0, borderRadius: 7, padding: "7px 9px", background: "#fee2e2", color: "#991b1b", fontWeight: 700 }}>Reject</button></>}
+            {canReview && r.reviewStatus === "PENDING" && <><button disabled={busy} onClick={() => review(r.id, "APPROVE")} style={{ border: 0, borderRadius: 7, padding: "7px 9px", background: "#dcfce7", color: "#166534", fontWeight: 700 }}>Approve</button><button disabled={busy} onClick={() => review(r.id, "REJECT")} style={{ border: 0, borderRadius: 7, padding: "7px 9px", background: "#fee2e2", color: "#991b1b", fontWeight: 700 }}>Reject</button></>}{(r.category === "CURRICULUM" || r.category === "SCHEME_OF_WORK") && r.extractedTextAvailable && <button disabled={!!importing || busy} onClick={() => importCurriculum(r.id)} style={{ border: 0, borderRadius: 7, padding: "7px 9px", background: "#e0e7ff", color: "#3730a3", fontWeight: 700 }}>{importing === r.id ? "Extracting…" : "Convert to curriculum"}</button>}
             {(canReview || r.uploadedBy === userId) && <button disabled={busy} onClick={() => remove(r.id)} style={{ border: 0, borderRadius: 7, padding: "7px 9px", background: "#f1f5f9", color: "#475569", fontWeight: 700 }}>Delete</button>}
           </div>
         </article>)}
