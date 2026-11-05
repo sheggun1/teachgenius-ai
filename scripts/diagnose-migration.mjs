@@ -8,7 +8,7 @@ async function main() {
   console.log("\n=== DATABASE MIGRATION DIAGNOSTIC (READ ONLY) ===");
 
   const migrationTable = await prisma.$queryRawUnsafe(
-    `SELECT to_regclass('public."_prisma_migrations"') AS table_name`
+    `SELECT to_regclass('public."_prisma_migrations"')::text AS table_name`
   );
   console.log("\nMigration table:", JSON.stringify(migrationTable));
 
@@ -56,7 +56,7 @@ async function main() {
   console.log(JSON.stringify(columns, null, 2));
 
   const auditTable = await prisma.$queryRawUnsafe(
-    `SELECT to_regclass('public."PlatformAdminAuditLog"') AS table_name`
+    `SELECT to_regclass('public."PlatformAdminAuditLog"')::text AS table_name`
   );
   console.log("\nPlatformAdminAuditLog table:", JSON.stringify(auditTable));
   console.log("\n=== END READ-ONLY DIAGNOSTIC ===\n");
