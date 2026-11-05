@@ -16,6 +16,7 @@ export default function StudioClient({displayName}:{displayName:string}) {
   const [topics,setTopics]=useState<Topic[]>([]);
   const [topicId,setTopicId]=useState("");
   const [resources,setResources]=useState<Resource[]>([]);
+  const [aiCreditBalance,setAiCreditBalance]=useState<number|null>(null);
   const [resourceIds,setResourceIds]=useState<string[]>([]);
   const [type,setType]=useState("LESSON_NOTE");
   const [title,setTitle]=useState("");
@@ -39,7 +40,7 @@ export default function StudioClient({displayName}:{displayName:string}) {
   useEffect(()=>{
     if(!workspaceId){setResources([]);setResourceIds([]);return;}
     let active=true;
-    fetch("/api/workspaces/"+workspaceId+"/resources").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to load resources");if(active)setResources((d.resources||[]).map((x:Resource)=>({...x,extractedTextAvailable:!!x.extractedTextAvailable})));}).catch(()=>{if(active)setResources([]);});
+    fetch("/api/workspaces/"+workspaceId+"/resources").then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||"Unable to load resources");if(active){setResources((d.resources||[]).map((x:Resource)=>({...x,extractedTextAvailable:!!x.extractedTextAvailable})));setAiCreditBalance(Number(d.aiCreditBalance||0));}}).catch(()=>{if(active)setResources([]);});
     return()=>{active=false;};
   },[workspaceId]);
   const selectedTopic=useMemo(()=>topics.find(t=>t.id===topicId),[topics,topicId]);
@@ -50,7 +51,7 @@ export default function StudioClient({displayName}:{displayName:string}) {
     setLoading(true);
     try{
       const response=await fetch("/api/ai/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({organizationId:workspaceId,curriculumTopicId:topicId,type,title:title.trim()||undefined,additionalInstructions:instructions.trim()||undefined,resourceIds})});
-      const data=await response.json();if(!response.ok)throw new Error(data.error||"Document generation failed");
+      const data=await response.json();if(typeof data.balance==="number")setAiCreditBalance(data.balance);if(!response.ok)throw new Error(data.error||"Document generation failed");
       router.push("/documents/"+data.document.id);router.refresh();
     }catch(e){setError(e instanceof Error?e.message:"Unable to generate document");}
     finally{setLoading(false);}
@@ -59,7 +60,7 @@ export default function StudioClient({displayName}:{displayName:string}) {
   return <main className="tg-shell">
     <header className="tg-topbar"><Link href="/" className="tg-brand"><span className="tg-brand-mark">T</span><span><span className="tg-brand-name">TeachGenius AI</span><span className="tg-brand-sub" style={{display:"block"}}>Teaching and learning workspace</span></span></Link><div className="tg-top-actions"><Link className="tg-btn tg-btn-secondary" href="/">← Dashboard</Link></div></header>
     <div className="tg-page">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"end",gap:20,flexWrap:"wrap",marginBottom:26}}><div><div className="tg-eyebrow">AI-powered teaching resources</div><h1 className="tg-heading">Document Studio</h1><p className="tg-subtitle">Create curriculum-aligned resources, refine the content, and export polished Word or PDF documents.</p></div><div className="tg-card" style={{padding:"12px 16px"}}><div className="tg-eyebrow">Signed in as</div><strong style={{display:"block",marginTop:5}}>{displayName}</strong></div></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"end",gap:20,flexWrap:"wrap",marginBottom:26}}><div><div className="tg-eyebrow">AI-powered teaching resources</div><h1 className="tg-heading">Document Studio</h1><p className="tg-subtitle">Create curriculum-aligned resources, refine the content, and export polished Word or PDF documents.</p></div><div className="tg-card" style={{padding:"12px 16px"}}><div className="tg-eyebrow">Signed in as</div><strong style={{display:"block",marginTop:5}}>{displayName}</strong><div className="tg-eyebrow" style={{marginTop:10}}>Workspace AI credits</div><strong style={{display:"block",marginTop:3,fontSize:21,color:"#155eef"}}>{aiCreditBalance===null?"Loading…":aiCreditBalance}</strong><small style={{color:"#64748b"}}>1 credit per successful AI document or curriculum conversion</small></div></div>
       <div className="tg-grid" style={{gridTemplateColumns:"minmax(0,1.2fr) minmax(260px,.8fr)",alignItems:"start"}}>
         <form className="tg-card tg-card-pad" onSubmit={generate} style={{display:"grid",gap:19}}>
           <div><h2 className="tg-section-title">Build a new teaching document</h2><p className="tg-subtitle" style={{marginTop:6}}>Select from the school’s published curriculum. AI generation remains restricted to approved topics.</p></div>

@@ -11,6 +11,7 @@ const field: React.CSSProperties = { width: "100%", border: "1px solid #d8e0ec",
 export default function ResourcesClient({ workspaces, isPlatformAdmin, userId }: { workspaces: Workspace[]; isPlatformAdmin: boolean; userId: string }) {
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id || "");
   const [resources, setResources] = useState<Resource[]>([]);
+  const [aiCreditBalance, setAiCreditBalance] = useState(0);
   const [canReview, setCanReview] = useState(isPlatformAdmin);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("REFERENCE");
@@ -26,6 +27,7 @@ export default function ResourcesClient({ workspaces, isPlatformAdmin, userId }:
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to load resources");
     setResources(data.resources || []);
+    setAiCreditBalance(Number(data.aiCreditBalance || 0));
     setCanReview(!!data.canReview);
   }
   useEffect(() => { load().catch(e => setNotice(e.message)); }, [workspaceId]);
@@ -68,6 +70,7 @@ export default function ResourcesClient({ workspaces, isPlatformAdmin, userId }:
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Curriculum extraction failed");
       setNotice(data.message + " Curriculum: " + data.curriculum.title + " (" + data.curriculum.versions[0].topics.length + " topics).");
+      await load();
     } catch (e) { setNotice(e instanceof Error ? e.message : "Curriculum extraction failed"); }
     finally { setImporting(""); }
   }
@@ -101,7 +104,7 @@ export default function ResourcesClient({ workspaces, isPlatformAdmin, userId }:
       {notice && <p role="status" style={{ background: "#eff6ff", color: "#1e40af", borderRadius: 8, padding: 11, fontSize: 12, margin: "14px 0 0" }}>{notice}</p>}
     </section>
     <section style={panel}>
-      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10, alignItems: "center" }}><div><h2 style={{ margin: 0, fontSize: 18 }}>Workspace resources</h2><p style={{ color: "#64748b", fontSize: 12, margin: "5px 0 0" }}>Review pending uploads, download files and manage your materials.</p></div><strong style={{ fontSize: 22 }}>{resources.length}</strong></div>
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10, alignItems: "center" }}><div><h2 style={{ margin: 0, fontSize: 18 }}>Workspace resources</h2><p style={{ color: "#64748b", fontSize: 12, margin: "5px 0 0" }}>Review pending uploads, download files and manage your materials.</p><p style={{ color: "#155eef", fontSize: 12, fontWeight: 800, margin: "7px 0 0" }}>AI credits available: {aiCreditBalance} · Curriculum conversion uses 1 credit</p></div><strong style={{ fontSize: 22 }}>{resources.length}</strong></div>
       <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
         {resources.map(r => <article key={r.id} style={{ border: "1px solid #e8edf4", borderRadius: 11, padding: 14, display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <div style={{ minWidth: 200, flex: 1 }}><strong style={{ fontSize: 14 }}>{r.title}</strong><div style={{ color: "#64748b", fontSize: 11, marginTop: 4 }}>{r.originalName} · {(r.fileSize / 1024 / 1024).toFixed(2)} MB · {label(r.category)}</div><div style={{ color: "#94a3b8", fontSize: 11, marginTop: 4 }}>Uploaded by {r.uploader.displayName || r.uploader.email || "Workspace member"} · {new Date(r.createdAt).toLocaleDateString()}</div></div>

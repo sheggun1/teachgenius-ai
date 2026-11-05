@@ -72,12 +72,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ org
       return NextResponse.json({ error: "Workspace access denied" }, { status: 403 });
     }
     const admin = platformAdmin || membership?.role === "SCHOOL_ADMIN";
-    const resources = await prisma.resourceAsset.findMany({
+    const [resources, creditAccount] = await Promise.all([
+      prisma.resourceAsset.findMany({
       where: { organizationId, ...(admin ? {} : { OR: [{ uploadedBy: user.id }, { visibility: "WORKSPACE", reviewStatus: "APPROVED" }] }) },
       select: { id: true, title: true, originalName: true, mimeType: true, fileSize: true, category: true, visibility: true, reviewStatus: true, reviewNote: true, extractedText: true, createdAt: true, uploadedBy: true, uploader: { select: { displayName: true, email: true } } },
       orderBy: { createdAt: "desc" },
-    });
-    return NextResponse.json({ resources: resources.map(({ extractedText, ...resource }) => ({ ...resource, extractedTextAvailable: Boolean(extractedText), canUseForAi: resource.uploadedBy === user.id || (resource.visibility === "WORKSPACE" && resource.reviewStatus === "APPROVED") })), canReview: admin });
+      }),
+      prisma.aiCreditAccount.findUnique({ where: { organizationId }, select: { balance: true } }),
+    ]);
+    return NextResponse.json({ resources: resources.map(({ extractedText, ...resource }) => ({ ...resource, extractedTextAvailable: Boolean(extractedText), canUseForAi: resource.uploadedBy === user.id || (resource.visibility === "WORKSPACE" && resource.reviewStatus === "APPROVED") })), canReview: admin, aiCreditBalance: creditAccount?.balance ?? 0 });
   } catch (error) {
     console.error("Resource listing failed:", error);
     return NextResponse.json({ error: "Unable to load resources" }, { status: 500 });
