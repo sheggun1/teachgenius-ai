@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 
 type Workspace = { id: string; name: string; type: string; role?: string };
-type Resource = { id: string; title: string; originalName: string; mimeType: string; fileSize: number; category: string; visibility: string; reviewStatus: string; reviewNote?: string | null; createdAt: string; uploadedBy: string; uploader: { displayName: string | null; email: string | null } };
+type Resource = { extractedTextAvailable: boolean; id: string; title: string; originalName: string; mimeType: string; fileSize: number; category: string; visibility: string; reviewStatus: string; reviewNote?: string | null; createdAt: string; uploadedBy: string; uploader: { displayName: string | null; email: string | null } };
 const categories = ["CURRICULUM","SCHEME_OF_WORK","LESSON_NOTE","LESSON_PLAN","ASSIGNMENT","WORKSHEET","QUESTION_PAPER","PRESENTATION","REFERENCE","OTHER"];
 const label = (value: string) => value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, x => x.toUpperCase());
 const panel: React.CSSProperties = { background: "#fff", border: "1px solid #e5eaf2", borderRadius: 14, padding: 20 };
