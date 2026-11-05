@@ -87,8 +87,13 @@ function extractGeminiText(payload: unknown): string | null {
 
 async function refundAiCredit(organizationId: string, reservationId: string) {
   await prisma.$transaction(async (tx) => {
-    await tx.aiCreditAccount.update({ where: { organizationId }, data: { balance: { increment: 1 } } });
-    await tx.aiUsageLedger.update({ where: { id: reservationId }, data: { status: "REFUNDED", creditsDelta: 0 } });
+    const changed = await tx.aiUsageLedger.updateMany({
+      where: { id: reservationId, status: "RESERVED" },
+      data: { status: "REFUNDED", creditsDelta: 0 },
+    });
+    if (changed.count === 1) {
+      await tx.aiCreditAccount.update({ where: { organizationId }, data: { balance: { increment: 1 } } });
+    }
   });
 }
 
