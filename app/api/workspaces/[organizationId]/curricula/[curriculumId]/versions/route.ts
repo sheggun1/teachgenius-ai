@@ -24,9 +24,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { organizationId, curriculumId } = await context.params;
 
     const membership = await prisma.membership.findFirst({
-      where: { userId: user.id, organizationId, status: "ACTIVE" },
+      where: { userId: user.id, organizationId },
+      select: { role: true, status: true },
     });
-    if (!membership || !["SCHOOL_ADMIN", "TEACHER"].includes(membership.role)) {
+    if (membership?.status === "SUSPENDED") {
+      return NextResponse.json({ error: "Your access to this workspace has been suspended" }, { status: 403 });
+    }
+
+    const isPlatformAdmin = user.platformRole === "PLATFORM_ADMIN";
+    const isSchoolAdmin = membership?.status === "ACTIVE" && membership.role === "SCHOOL_ADMIN";
+    const isActiveTeacher = membership?.status === "ACTIVE" && membership.role === "TEACHER";
+    if (!isPlatformAdmin && !isSchoolAdmin && !isActiveTeacher) {
       return NextResponse.json({ error: "Workspace access denied" }, { status: 403 });
     }
 
@@ -35,6 +43,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
     });
     if (!curriculum) return NextResponse.json({ error: "Curriculum not found" }, { status: 404 });
+    if (isActiveTeacher && curriculum.createdBy !== user.id) {
+      return NextResponse.json({ error: "Teachers can only revise curriculum submissions they created" }, { status: 403 });
+    }
 
     const parsed = versionSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Invalid curriculum version", details: parsed.error.flatten() }, { status: 400 });
