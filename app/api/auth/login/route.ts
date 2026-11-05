@@ -12,7 +12,6 @@ export async function POST(request: NextRequest) {
   try {
     const parsed = loginSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Enter a valid email and password" }, { status: 400 });
-
     const email = parsed.data.email.toLowerCase();
     const user = await prisma.userProfile.findUnique({ where: { email } });
     if (!user?.passwordHash || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
@@ -21,12 +20,8 @@ export async function POST(request: NextRequest) {
     if (user.accountStatus === "SUSPENDED") {
       return NextResponse.json({ error: "This TeachGenius AI account has been suspended. Contact platform support." }, { status: 403 });
     }
-
     await createSession(user.id);
-    return NextResponse.json({
-      success: true,
-      user: { id: user.id, email: user.email, displayName: user.displayName, platformRole: user.platformRole },
-    });
+    return NextResponse.json({ success: true, user: { id: user.id, email: user.email, displayName: user.displayName, platformRole: user.platformRole } });
   } catch (error) {
     console.error("Login failed:", error);
     return NextResponse.json({ error: "Unable to sign in" }, { status: 500 });
