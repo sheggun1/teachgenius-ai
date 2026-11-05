@@ -10,10 +10,14 @@ export async function POST(_request: Request, context: RouteContext) {
     if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     const { organizationId, curriculumId } = await context.params;
 
-    const membership = await prisma.membership.findFirst({
-      where: { userId: user.id, organizationId, status: "ACTIVE" },
-      select: { role: true },
+    const anyMembership = await prisma.membership.findFirst({
+      where: { userId: user.id, organizationId },
+      select: { role: true, status: true },
     });
+    if (anyMembership?.status === "SUSPENDED") {
+      return NextResponse.json({ error: "Your access to this workspace has been suspended" }, { status: 403 });
+    }
+    const membership = anyMembership?.status === "ACTIVE" ? anyMembership : null;
     const canPublish = user.platformRole === "PLATFORM_ADMIN" || membership?.role === "SCHOOL_ADMIN";
     if (!canPublish) {
       return NextResponse.json({

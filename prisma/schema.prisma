@@ -12,6 +12,11 @@ enum PlatformRole {
   PLATFORM_ADMIN
 }
 
+enum UserAccountStatus {
+  ACTIVE
+  SUSPENDED
+}
+
 enum OrganizationType {
   SCHOOL
   EDUCATION_ORGANIZATION
@@ -59,12 +64,27 @@ model UserProfile {
   email          String?      @unique
   passwordHash   String?
   platformRole   PlatformRole @default(USER)
+  accountStatus UserAccountStatus @default(ACTIVE)
   emailVerifiedAt DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   memberships   Membership[]
   authSessions  AuthSession[]
   ownedDocuments GeneratedDocument[] @relation("PersonalDocuments")
+}
+
+model PlatformAdminAuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorUserId    String   @db.Uuid
+  targetUserId   String?  @db.Uuid
+  organizationId String?  @db.Uuid
+  action         String
+  details        Json?
+  createdAt      DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([targetUserId, createdAt])
+  @@index([organizationId, createdAt])
 }
 
 model AuthSession {
