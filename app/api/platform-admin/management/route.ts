@@ -34,7 +34,7 @@ export async function GET() {
           _count: { select: { memberships: true, curricula: true, documents: true } } },
       }),
       prisma.platformAdminAuditLog.findMany({ orderBy: { createdAt: "desc" }, take: 20,
-        include: { } }),
+         }),
     ]);
     return NextResponse.json({
       users: users.map(u => ({ ...u, createdAt: u.createdAt.toISOString() })),
@@ -50,7 +50,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdmin();
-    if (auth.error) return auth.error;
+    if ("error" in auth) return auth.error;
     const parsed = actionSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Invalid management request", details: parsed.error.flatten() }, { status: 400 });
     const input = parsed.data;
