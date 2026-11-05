@@ -85,6 +85,13 @@ function extractGeminiText(payload: unknown): string | null {
   return text || null;
 }
 
+async function refundAiCredit(organizationId: string, reservationId: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.aiCreditAccount.update({ where: { organizationId }, data: { balance: { increment: 1 } } });
+    await tx.aiUsageLedger.update({ where: { id: reservationId }, data: { status: "REFUNDED", creditsDelta: 0 } });
+  });
+}
+
 export async function POST(request: NextRequest) {
   let reservedOrganizationId: string | null = null;
   let reservationId: string | null = null;
@@ -230,6 +237,8 @@ export async function POST(request: NextRequest) {
     if (!aiResponse.ok) {
       const detail = await aiResponse.text();
       console.error("Gemini provider error:", aiResponse.status, detail.slice(0, 1000));
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "Gemini could not complete the generation request" }, { status: 502 });
     }
 
@@ -237,6 +246,8 @@ export async function POST(request: NextRequest) {
     const rawContent = extractGeminiText(aiData);
     if (!rawContent) {
       console.error("Gemini returned no text output");
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "Gemini returned an empty response" }, { status: 502 });
     }
 
@@ -244,11 +255,15 @@ export async function POST(request: NextRequest) {
     try {
       decoded = JSON.parse(rawContent);
     } catch {
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "Gemini returned invalid structured content. Please try again." }, { status: 502 });
     }
     const validated = generatedContentSchema.safeParse(decoded);
     if (!validated.success) {
       console.error("Gemini output validation failed:", validated.error.flatten());
+      await refundAiCredit(input.organizationId, reservationId!);
+      reservedOrganizationId = null; reservationId = null;
       return NextResponse.json({ error: "The AI response did not meet the document format requirements" }, { status: 502 });
     }
 
@@ -288,10 +303,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (reservedOrganizationId && reservationId) {
       try {
-        await prisma.$transaction(async (tx) => {
-          await tx.aiCreditAccount.update({ where: { organizationId: reservedOrganizationId! }, data: { balance: { increment: 1 } } });
-          await tx.aiUsageLedger.update({ where: { id: reservationId! }, data: { status: "REFUNDED", creditsDelta: 0 } });
-        });
+        await refundAiCredit(reservedOrganizationId, reservationId);
       } catch (refundError) {
         console.error("AI credit refund failed; manual review required:", refundError);
       }
