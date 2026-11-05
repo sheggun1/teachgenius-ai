@@ -22,6 +22,8 @@ async function request(path, options = {}, auth = true) {
 async function run() {
   const anonymous = await request("/api/auth/me", {}, false);
   assert.equal(anonymous.response.status, 401, "anonymous session lookup must be rejected");
+  const protectedResources = await request("/api/workspaces/00000000-0000-4000-8000-000000000000/resources", {}, false);
+  assert.equal(protectedResources.response.status, 401, "workspace resources must require authentication");
 
   const registration = await request("/api/auth/register", {
     method: "POST",
@@ -133,7 +135,19 @@ async function run() {
   const afterLogout = await request("/api/auth/me", {}, false);
   assert.equal(afterLogout.response.status, 401, "logout must revoke the session");
 
-  console.log("PASS: registration, session, workspace, starter credits, resource upload/download/delete, curriculum create/publish, document save/version and logout.");
+  const login = await request("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  }, false);
+  assert.equal(login.response.status, 200, JSON.stringify(login.data));
+  const loginCookie = (login.response.headers.getSetCookie?.() || []).find(value => value.startsWith("tg_session="));
+  assert.ok(loginCookie, "login must issue a session cookie");
+  cookie = loginCookie.split(";")[0];
+  const authenticatedAgain = await request("/api/auth/me");
+  assert.equal(authenticatedAgain.response.status, 200, "login must restore the authenticated session");
+
+  console.log("PASS: registration, login/logout/session, workspace, starter credits, resource upload/download/delete, curriculum create/publish, document save/version.");
 }
 
 try {
