@@ -19,10 +19,11 @@ export default async function PlatformAdminPage() {
   if (!user) redirect("/login");
   if (user.platformRole !== "PLATFORM_ADMIN") redirect("/");
 
-  const [userCount, schoolCount, teacherMembershipCount, curriculumCount, documentCount, users, organizations] =
+  const [userCount, schoolCount, workspaceCount, teacherMembershipCount, curriculumCount, documentCount, users, organizations] =
     await Promise.all([
       prisma.userProfile.count(),
       prisma.organization.count({ where: { type: "SCHOOL" } }),
+      prisma.organization.count(),
       prisma.membership.count({ where: { role: "TEACHER", status: "ACTIVE" } }),
       prisma.curriculumDocument.count(),
       prisma.generatedDocument.count(),
@@ -57,7 +58,8 @@ export default async function PlatformAdminPage() {
 
   const stats = [
     { title: "Registered users", value: userCount, note: "All platform accounts" },
-    { title: "Schools", value: schoolCount, note: "School workspaces" },
+    { title: "Schools", value: schoolCount, note: "Registered school workspaces" },
+    { title: "Total workspaces", value: workspaceCount, note: "Schools and education organisations" },
     { title: "Active teachers", value: teacherMembershipCount, note: "Active teacher memberships" },
     { title: "Curriculum documents", value: curriculumCount, note: "Across all workspaces" },
     { title: "Teaching documents", value: documentCount, note: "Generated and saved documents" },
