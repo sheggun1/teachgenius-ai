@@ -32,7 +32,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     const { organizationId } = await context.params;
-    const membership = await getMembership(user.id, organizationId);
+    const anyMembership = await prisma.membership.findFirst({ where: { userId: user.id, organizationId } });
+    if (anyMembership?.status === "SUSPENDED") {
+      return NextResponse.json({ error: "Your access to this workspace has been suspended" }, { status: 403 });
+    }
+    const membership = anyMembership?.status === "ACTIVE" ? anyMembership : null;
     if (!membership && user.platformRole !== "PLATFORM_ADMIN") {
       return NextResponse.json({ error: "Workspace access denied" }, { status: 403 });
     }
